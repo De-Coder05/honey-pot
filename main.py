@@ -77,11 +77,26 @@ class HoneyPotResponse(BaseModel):
 
 def send_final_callback(session: SessionData):
     """Sends the mandatory final result to GUVI endpoint"""
-    # Logic: Only send if we have sufficient signals or engagement ended
-    # For now, we call this periodically or at end.
-    # Implementation depends on when we decide it's "Final".
-    # We will just log it for now as strict trigger rules aren't defined.
-    pass
+    try:
+        # Construct payload as per Section 12 of guidelines
+        payload = {
+            "sessionId": session.session_id,
+            "scamDetected": session.scam_detected,
+            "totalMessagesExchanged": len(session.messages),
+            "extractedIntelligence": session.extracted_intelligence,
+            "agentNotes": session.agent_notes or "Scam detected via automation."
+        }
+        
+        # Send to GUVI
+        # using a timeout to not block anything (though this is running in background)
+        response = requests.post(
+            CALLBACK_URL,
+            json=payload,
+            timeout=5
+        )
+        logger.info(f"Callback sent for {session.session_id}: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Failed to send callback: {e}")
 
 @app.post("/api/honeypot")
 async def handle_honeypot(
@@ -149,6 +164,12 @@ async def handle_honeypot(
     
     # Update Session State
     update_session(request.sessionId, session)
+    
+    # 6. Trigger Callback (Mandatory for Evaluation)
+    # We send this in the background to not slow down the response.
+    # We send it if scam is detected, acting as a real-time update/final report.
+    if is_scam:
+        background_tasks.add_task(send_final_callback, session)
     
     return response_data
 
