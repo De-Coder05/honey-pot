@@ -149,13 +149,18 @@ async def handle_honeypot(
     
     update_session(sid, session)
 
-    # 4. Rich Response (Required for Tester?)
-    # Returning the full metrics synchronously just in case the Tester demands it
+    # 4. Rich Response (Dual Format for Safety)
     response_data = {
         "status": "success",
         "sessionId": sid,
+        "session_id": sid, # Dual support
+        
         "scamDetected": is_scam,
+        "scam_detected": is_scam,
+        
         "extractedIntelligence": session.extracted_intelligence,
+        "extracted_intelligence": session.extracted_intelligence,
+        
         "reply": reply_text
     }
     
