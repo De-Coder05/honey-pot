@@ -45,7 +45,90 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={"status": "error", "message": "Internal Server Error"},
     )
 
-# --- LOGIC ---
+# --- IMPORTS ---
+from config import CALLBACK_URL, GEMINI_API_KEY
+from intelligence_extractor import extract_intelligence, merge_intelligence
+import google.generativeai as genai
+
+# Configure GenAI
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-pro')
+
+# --- DATA MODELS ---
+
+class Message(BaseModel):
+    role: str  # "user" or "agent"
+    text: str
+    timestamp: float = time.time()
+
+class HoneyPotRequest(BaseModel):
+    sessionId: str
+    message: Message
+    conversationHistory: List[Message] = []
+
+class SessionData:
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.messages: List[Message] = []
+        self.scam_detected: bool = False
+        self.extracted_intelligence: Dict = {
+            "bankAccounts": [], "upiIds": [], "phishingLinks": [], "phoneNumbers": [], "suspiciousKeywords": []
+        }
+        self.agent_notes: Optional[str] = None
+
+# --- IN-MEMORY SESSION STORE ---
+sessions: Dict[str, SessionData] = {}
+
+def get_session(session_id: str) -> SessionData:
+    if session_id not in sessions:
+        sessions[session_id] = SessionData(session_id)
+    return sessions[session_id]
+
+def update_session(session_id: str, session: SessionData):
+    sessions[session_id] = session
+
+# --- HELPER FUNCTIONS ---
+
+def detect_scam(text: str) -> bool:
+    """Simple keyword-based detection + LLM sanity check if available"""
+    suspicious_keywords = ["urgent", "verify", "block", "freeze", "kyc", "pan", "otp", "winner", "prize", "lottery"]
+    if any(word in text.lower() for word in suspicious_keywords):
+        return True
+    return False
+
+class Agent:
+    def generate_response(self, history: List[Dict]) -> str:
+        """Generates a response using Gemini or fallback"""
+        # Construct prompt from history
+        system_prompt = (
+            "You are an elderly, slightly confused, but wealthy individual named Ramesh. "
+            "You are currently talking to someone who might be a scammer. "
+            "Your goal is to waste their time by asking irrelevant questions, acting confused about technology, "
+            "and pretending to try to follow their instructions but 'failing' or getting distracted. "
+            "Do NOT reveal that you know it is a scam. Just play along and keep them engaged. "
+            "Keep your responses short and conversational."
+        )
+        
+        try:
+            if GEMINI_API_KEY:
+                chat = model.start_chat(history=[])
+                # Feed history loosely (simplification for hackathon speed)
+                prompt = system_prompt + "\n\nConversation History:\n"
+                for msg in history[-5:]: # Keep context short
+                    prompt += f"{msg['role']}: {msg['text']}\n"
+                prompt += "Ramesh:"
+                
+                response = model.generate_content(prompt)
+                return response.text.strip()
+            else:
+                return "Oh dear, verify what? I'm not very good with these computer things. My grandson usually helps me."
+        except Exception as e:
+            logger.error(f"LLM Error: {e}")
+            return "I am sorry, I didn't quite catch that. Could you repeat?"
+
+agent = Agent()
+
 
 def send_final_callback(session: SessionData):
     """Sends the mandatory final result to GUVI endpoint"""
