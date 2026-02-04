@@ -62,10 +62,52 @@ from fastapi import Request
 import time
 
 # Configure GenAI
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    # Use Flash - newer, faster, more reliable availability
-    model = genai.GenerativeModel('gemini-1.5-flash')
+model = None
+
+def configure_llm():
+    global model
+    if not GEMINI_API_KEY:
+        logger.warning("No Gemini API Key found.")
+        return
+
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        
+        # Dynamic Model Selection
+        available_models = list(genai.list_models())
+        logger.info(f"Available Models: {[m.name for m in available_models]}")
+        
+        target_model_name = None
+        # Priority list
+        priorities = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"]
+        
+        # 1. Try to find a priority match
+        for p in priorities:
+            for m in available_models:
+                if p in m.name:
+                    target_model_name = m.name
+                    break
+            if target_model_name:
+                break
+                
+        # 2. Fallback to any generateContent model
+        if not target_model_name:
+            for m in available_models:
+                if "generateContent" in m.supported_generation_methods:
+                    target_model_name = m.name
+                    break
+        
+        if target_model_name:
+            logger.info(f"Selected LLM: {target_model_name}")
+            model = genai.GenerativeModel(target_model_name)
+        else:
+            logger.error("No suitable Gemini model found!")
+            
+    except Exception as e:
+        logger.error(f"Failed to configure LLM: {e}")
+
+# Run configuration
+configure_llm()
 
 # ... (middleware removal was already done) ...
 
