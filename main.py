@@ -49,23 +49,46 @@ async def general_exception_handler(request: Request, exc: Exception):
 from config import CALLBACK_URL, GEMINI_API_KEY
 from intelligence_extractor import extract_intelligence, merge_intelligence
 import google.generativeai as genai
+from fastapi import Request
+import time
 
 # Configure GenAI
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-pro')
 
+# --- MIDDLEWARE FOR DEBUGGING ---
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Read body for debugging (careful with large bodies, but this is hackathon)
+    body = await request.body()
+    logger.info(f"INCOMING REQUEST BODY: {body.decode()}")
+    
+    # Re-inject body so it can be read again by FastAPI
+    async def receive():
+        return {"type": "http.request", "body": body}
+    request._receive = receive
+    
+    response = await call_next(request)
+    return response
+
 # --- DATA MODELS ---
 
 class Message(BaseModel):
     role: str  # "user" or "agent"
     text: str
-    timestamp: float = time.time()
+    timestamp: Union[float, str, None] = None
+    
+    class Config:
+        extra = "ignore" # Allow extra fields like 'id' or 'meta'
 
 class HoneyPotRequest(BaseModel):
     sessionId: str
     message: Message
     conversationHistory: List[Message] = []
+    
+    class Config:
+        extra = "ignore" # Allow extra fields
 
 class SessionData:
     def __init__(self, session_id: str):
@@ -116,7 +139,13 @@ class Agent:
                 # Feed history loosely (simplification for hackathon speed)
                 prompt = system_prompt + "\n\nConversation History:\n"
                 for msg in history[-5:]: # Keep context short
-                    prompt += f"{msg['role']}: {msg['text']}\n"
+                    try:
+                        # Handle case where msg is dict or Pydantic model
+                        role = msg.get('role') if isinstance(msg, dict) else msg.role
+                        text = msg.get('text') if isinstance(msg, dict) else msg.text
+                        prompt += f"{role}: {text}\n"
+                    except:
+                        continue
                 prompt += "Ramesh:"
                 
                 response = model.generate_content(prompt)
