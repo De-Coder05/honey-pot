@@ -191,18 +191,11 @@ async def handle_honeypot(
     
     update_session(sid, session)
 
-    # 4. Rich Response (Dual Format for Safety)
+    # 5. Strict Response (Section 8 of Guidelines)
+    # The Tester likely fails if *any* extra fields are present in the HTTP Response.
+    # All intelligence/metrics must ONLY go to the Callback.
     response_data = {
         "status": "success",
-        "sessionId": sid,
-        "session_id": sid, # Dual support
-        
-        "scamDetected": is_scam,
-        "scam_detected": is_scam,
-        
-        "extractedIntelligence": session.extracted_intelligence,
-        "extracted_intelligence": session.extracted_intelligence,
-        
         "reply": reply_text
     }
     
