@@ -212,6 +212,13 @@ def send_final_callback(session: SessionData):
     except Exception as e:
         logger.error(f"Failed to send callback: {e}")
 
+@app.get("/api/honeypot")
+def honeypot_explanation():
+    return {
+        "status": "active", 
+        "message": "This is a POST-only endpoint. Please send a POST request with the required JSON body to interact with the Honey-Pot."
+    }
+
 @app.post("/api/honeypot", response_model=HoneyPotResponse)
 @app.post("/api/honeypot")
 async def handle_honeypot(
