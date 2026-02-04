@@ -29,10 +29,19 @@ async def http_exception_handler(request, exc):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(f"Validation Error: {exc}")
+    # Log detailed validation errors
+    error_details = exc.errors()
+    logger.error(f"Validation Error: {error_details}")
+    try:
+        # Try to log body if available in exception
+        if hasattr(exc, 'body'):
+            logger.error(f"Request Body triggering error: {exc.body}")
+    except:
+        pass
+        
     return JSONResponse(
         status_code=422,
-        content={"status": "error", "message": "Invalid or malformed request"},
+        content={"status": "error", "message": f"Invalid request: {error_details}"},
     )
 
 @app.exception_handler(Exception)
@@ -57,20 +66,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-pro')
 
-# --- MIDDLEWARE FOR DEBUGGING ---
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    # Read body for debugging (careful with large bodies, but this is hackathon)
-    body = await request.body()
-    logger.info(f"INCOMING REQUEST BODY: {body.decode()}")
-    
-    # Re-inject body so it can be read again by FastAPI
-    async def receive():
-        return {"type": "http.request", "body": body}
-    request._receive = receive
-    
-    response = await call_next(request)
-    return response
+
 
 # --- DATA MODELS ---
 
